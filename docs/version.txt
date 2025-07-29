@@ -58,6 +58,11 @@ v1.0.11(2025.07.30)
 v1.0.12(2025.07.30)
 - 워크플로우 자동 실행 테스트3(pre-install 빌드 훅 제거)
 
+v1.0.13(2025.07.30)
+- 깃허브 깃액션에서 expo 빌드 관련 코드 제거(로컬 빌드로)
+- 빌드 명령어: eas build --platform android --profile preview --local --non-interactive
+
+
 
 개선 사항
 - 앱 아이콘

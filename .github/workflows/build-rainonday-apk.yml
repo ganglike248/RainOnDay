@@ -2,7 +2,6 @@
 name: Build RainOnDay APK
 
 on:
-  # 수동으로 워크플로우 실행 가능
   workflow_dispatch:
     inputs:
       build_profile:
@@ -15,7 +14,6 @@ on:
           - preview
           - production
 
-  # main 브랜치에 push 시 자동 실행 (선택사항)
   push:
     branches:
       - main
@@ -25,99 +23,85 @@ on:
 
 jobs:
   build-apk:
-    name: Build RainOnDay APK
+    name: Build RainOnDay APK (Local Build)
     runs-on: ubuntu-latest
     
     steps:
-      # 코드 체크아웃
       - name: 📥 코드 체크아웃
         uses: actions/checkout@v4
 
-      # Node.js 설정 (프로젝트에서 사용하는 버전에 맞춤)
       - name: 🔧 Node.js 설정
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      # 의존성 설치
+      # Java 설정 추가 (Android 빌드용)
+      - name: ☕ Java 설정
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Android SDK 설정
+      - name: 📱 Android SDK 설정
+        uses: android-actions/setup-android@v3
+
       - name: 📦 의존성 설치
         run: npm ci
 
-      # Firebase 설정 파일 생성 (추가된 부분)
+      # Firebase 설정 파일 생성
       - name: 🔐 Firebase 설정 파일 생성
         run: |
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
             echo "✅ Firebase 설정 파일 생성 중..."
             echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > google-services.json
             echo "✅ Firebase 설정 파일 생성 완료"
-            ls -la google-services.json
           else
             echo "⚠️ GOOGLE_SERVICES_JSON Secret이 설정되지 않았습니다"
-            echo "로컬 알림만 사용하는 빌드로 진행합니다"
           fi
 
-      # EAS CLI 설치
       - name: 🛠️ EAS CLI 설치
-        run: |
-          echo "🔧 NPM 설정 초기화"
-          npm config set registry https://registry.npmjs.org/
-          npm config delete proxy || true
-          npm config delete https-proxy || true
-          npm cache clean --force
-          
-          echo "📦 EAS CLI 설치 시도"
-          # 여러 방법으로 설치 시도
-          npm install -g @expo/eas-cli@latest || \
-          npm install -g @expo/eas-cli@16.17.3 || \
-          npm install -g eas-cli@latest || \
-          { echo "NPM 설치 실패, Yarn으로 시도"; npm install -g yarn && yarn global add @expo/eas-cli@latest; }
-          
-          echo "✅ EAS CLI 버전 확인"
-          eas --version || npx @expo/eas-cli@latest --version
+        run: npm install -g @expo/eas-cli@latest
 
-      # Expo 인증 확인
       - name: 🔐 Expo 인증 확인
         run: eas whoami
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # 빌드 프로필별 APK 빌드
-      - name: 🚀 APK 빌드 실행
+      # 로컬 빌드 실행 (핵심 수정사항)
+      - name: 🚀 APK 로컬 빌드 실행
         run: |
-          echo "🔨 빌드 프로필: ${{ github.event.inputs.build_profile || 'preview' }}"
+          echo "🔨 로컬 빌드 프로필: ${{ github.event.inputs.build_profile || 'preview' }}"
+          echo "🏠 GitHub Actions 환경에서 직접 빌드 실행"
           
           if [ "${{ github.event.inputs.build_profile }}" = "development" ]; then
-            eas build --platform android --profile development --non-interactive
+            eas build --platform android --profile development --local --non-interactive
           elif [ "${{ github.event.inputs.build_profile }}" = "production" ]; then
-            eas build --platform android --profile production --non-interactive
+            eas build --platform android --profile production --local --non-interactive
           else
-            eas build --platform android --profile preview --non-interactive
+            eas build --platform android --profile preview --local --non-interactive
           fi
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # 빌드 후 민감한 파일 정리 (추가된 부분)
+      # 빌드 후 민감한 파일 정리
       - name: 🧹 민감한 파일 정리
         run: |
-          echo "🧹 Firebase 설정 파일 정리 중..."
           rm -f google-services.json
           rm -f service-account-*.json
-          echo "✅ 민감한 파일 정리 완료"
 
-      # 빌드된 APK 파일 찾기 및 이름 변경
       - name: 📱 APK 파일 처리
         run: |
           APK_FILE=$(find . -name "*.apk" -type f | head -1)
           if [ -n "$APK_FILE" ]; then
             TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
             PROFILE="${{ github.event.inputs.build_profile || 'preview' }}"
-            NEW_NAME="RainOnDay_${PROFILE}_${TIMESTAMP}.apk"
+            NEW_NAME="RainOnDay_LOCAL_${PROFILE}_${TIMESTAMP}.apk"
             mv "$APK_FILE" "$NEW_NAME"
             echo "APK_NAME=$NEW_NAME" >> $GITHUB_ENV
-            echo "✅ APK 파일명: $NEW_NAME"
+            echo "✅ 로컬 빌드 APK: $NEW_NAME"
             
-            # APK 파일 크기 확인
             FILE_SIZE=$(ls -lh "$NEW_NAME" | awk '{print $5}')
             echo "📏 APK 크기: $FILE_SIZE"
             echo "APK_SIZE=$FILE_SIZE" >> $GITHUB_ENV
@@ -126,27 +110,27 @@ jobs:
             exit 1
           fi
 
-      # APK를 GitHub Artifacts로 업로드
       - name: ⬆️ APK Artifacts 업로드
         uses: actions/upload-artifact@v4
         with:
-          name: rainonday-apk-${{ github.run_number }}
+          name: rainonday-local-apk-${{ github.run_number }}
           path: ${{ env.APK_NAME }}
           retention-days: 30
 
-      # 빌드 완료 요약
       - name: 📊 빌드 요약
         run: |
-          echo "## 🎉 비온데이 APK 빌드 완료!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 비온데이 로컬 빌드 완료!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📱 빌드 정보" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏠 로컬 빌드 정보" >> $GITHUB_STEP_SUMMARY
+          echo "- **빌드 방식**: GitHub Actions 로컬 빌드 (대기 시간 없음)" >> $GITHUB_STEP_SUMMARY
           echo "- **앱 이름**: RainOnDay (비온데이)" >> $GITHUB_STEP_SUMMARY
           echo "- **빌드 프로필**: ${{ github.event.inputs.build_profile || 'preview' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **APK 파일**: ${{ env.APK_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "- **파일 크기**: ${{ env.APK_SIZE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **빌드 번호**: ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 다운로드 방법" >> $GITHUB_STEP_SUMMARY
-          echo "1. Actions 탭으로 이동" >> $GITHUB_STEP_SUMMARY
-          echo "2. 이 워크플로우 실행을 선택" >> $GITHUB_STEP_SUMMARY
-          echo "3. 하단 Artifacts 섹션에서 APK 다운로드" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚡ 빌드 특징" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Expo 빌드 대기 없음" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GitHub Actions에서 직접 빌드" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Firebase 푸시 알림 지원" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 빠른 빌드 완료" >> $GITHUB_STEP_SUMMARY
