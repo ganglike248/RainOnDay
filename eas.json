@@ -23,9 +23,6 @@
       },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1"
-      },
-      "pre-install": {
-        "command": "node scripts/setup-firebase.js"
       }
     },
     "production": {
@@ -36,9 +33,6 @@
       },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1"
-      },
-      "pre-install": {
-        "command": "node scripts/setup-firebase.js"
       }
     }
   },
