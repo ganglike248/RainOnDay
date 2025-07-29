@@ -1,0 +1,365 @@
+// utils/notifications.js
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
+import { Platform, Alert } from 'react-native';
+import NetInfo from '@react-native-community/netinfo'; // 수정된 import
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+export const registerForPushNotificationsAsync = async (retryCount = 0) => {
+  const MAX_RETRIES = 3;
+  let token;
+
+  try {
+    if (!Device.isDevice) {
+      Alert.alert('알림 등록 실패', '실제 기기에서만 푸시 알림을 사용할 수 있습니다.');
+      return null;
+    }
+
+    // 네트워크 상태 확인
+    const networkAvailable = await checkNetworkAndRetry();
+    if (!networkAvailable) {
+      return null;
+    }
+
+    // 더 상세한 디버깅 정보
+    console.log('=== 상세 EAS 디버깅 ===');
+    console.log('Constants.expoConfig:', JSON.stringify(Constants.expoConfig, null, 2));
+    console.log('Constants.easConfig:', JSON.stringify(Constants.easConfig, null, 2));
+    console.log('Constants.manifest:', JSON.stringify(Constants.manifest, null, 2));
+    console.log('Constants.manifest2:', JSON.stringify(Constants.manifest2, null, 2));
+
+    // 다양한 방법으로 프로젝트 ID 확인
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ||
+      Constants.easConfig?.projectId ||
+      Constants.manifest?.extra?.eas?.projectId ||
+      Constants.manifest2?.extra?.eas?.projectId ||
+      'ff8a3b71-7f94-41f0-9b5d-34df9484f5fc'; // 하드코딩된 백업값
+
+    console.log('최종 프로젝트 ID:', projectId);
+    console.log(`푸시 토큰 생성 시도 (${retryCount + 1}/${MAX_RETRIES + 1})`);
+    console.log('========================');
+
+    if (!projectId) {
+      console.error('EAS 프로젝트 ID를 찾을 수 없습니다.');
+      Alert.alert('설정 오류', 'EAS 프로젝트 설정에 문제가 있습니다.');
+      return null;
+    }
+
+    // Android 알림 채널 설정
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      });
+    }
+
+    // 권한 확인
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    console.log('현재 알림 권한 상태:', existingStatus);
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+      console.log('권한 요청 후 상태:', status);
+    }
+
+    if (finalStatus !== 'granted') {
+      Alert.alert('권한 필요', '설정에서 알림 권한을 허용해주세요.');
+      return null;
+    }
+
+    // 푸시 토큰 생성 (타임아웃과 함께)
+    console.log('Firebase 기반 푸시 토큰 생성 시도:', projectId);
+
+    const tokenData = await Promise.race([
+      Notifications.getExpoPushTokenAsync({
+        projectId: projectId,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('푸시 토큰 생성 타임아웃')), 15000)
+      )
+    ]);
+
+    token = tokenData.data;
+    console.log('푸시 토큰 생성 성공:', token);
+
+    Alert.alert('알림 등록 성공', 'Firebase 기반 푸시 알림이 성공적으로 등록되었습니다.');
+    return token;
+
+  } catch (error) {
+    console.error(`푸시 알림 등록 오류 (시도 ${retryCount + 1}):`, error);
+
+    // 재시도 가능한 에러인지 확인
+    const isRetryableError =
+      error.message.includes('network') ||
+      error.message.includes('fetch') ||
+      error.message.includes('timeout') ||
+      error.message.includes('Firebase') ||
+      error.message.includes('ENOTFOUND') ||
+      error.message.includes('ETIMEDOUT') ||
+      error.message.includes('connection');
+
+    if (isRetryableError && retryCount < MAX_RETRIES) {
+      console.log(`${(retryCount + 1) * 2}초 후 재시도...`);
+
+      // 지수 백오프: 2초, 4초, 6초 대기
+      await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+
+      return await registerForPushNotificationsAsync(retryCount + 1);
+    }
+
+    // 에러 종류별 메시지 처리
+    if (error.message.includes('FirebaseApp') || error.message.includes('google-services')) {
+      Alert.alert(
+        'Firebase 설정 오류',
+        'Firebase 설정이 완료되지 않았습니다.\n\nFCM 인증서가 올바르게 업로드되었는지 확인해주세요.',
+        [
+          { text: '로컬 알림 사용', onPress: () => setupLocalNotificationsOnly() },
+          { text: '확인', style: 'cancel' }
+        ]
+      );
+    } else if (error.message.includes('projectId')) {
+      Alert.alert(
+        'EAS 설정 오류',
+        `프로젝트 ID 문제가 발생했습니다.\n\n확인된 ID: ff8a3b71-7f94-41f0-9b5d-34df9484f5fc\n\n로컬 알림은 정상 작동합니다.`,
+        [
+          { text: '로컬 알림 사용', onPress: () => setupLocalNotificationsOnly() },
+          { text: '확인', style: 'cancel' }
+        ]
+      );
+    } else if (isRetryableError) {
+      Alert.alert(
+        '네트워크 오류',
+        `푸시 알림 서비스 연결에 실패했습니다.\n\n${MAX_RETRIES + 1}번 시도했지만 연결되지 않았습니다.\n네트워크 상태를 확인하고 나중에 다시 시도해주세요.`,
+        [
+          { text: '로컬 알림 사용', onPress: () => setupLocalNotificationsOnly() },
+          { text: '나중에 다시 시도', style: 'cancel' }
+        ]
+      );
+    } else {
+      Alert.alert('알림 등록 실패', `오류: ${error.message}`);
+    }
+
+    return null;
+  }
+};
+
+export const checkNetworkAndRetry = async () => {
+  try {
+    const netInfo = await NetInfo.fetch();
+    console.log('네트워크 상태:', netInfo);
+
+    if (!netInfo.isConnected) {
+      Alert.alert('네트워크 오류', '인터넷 연결을 확인해주세요.');
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('네트워크 확인 오류:', error);
+    return true; // 확인 실패시 계속 진행
+  }
+};
+
+export const scheduleRainNotification = async (hour, minute, weatherData) => {
+  try {
+    console.log('알림 스케줄 시작:', { hour, minute });
+
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    const rainProbability = weatherData?.daily?.precipitation_probability_max?.[0] || 0;
+    const precipitation = weatherData?.daily?.precipitation_sum?.[0] || 0;
+    const maxTemp = Math.round(weatherData?.daily?.temperature_2m_max?.[0] || 0);
+    const minTemp = Math.round(weatherData?.daily?.temperature_2m_min?.[0] || 0);
+
+    console.log('날씨 데이터:', { rainProbability, precipitation, maxTemp, minTemp });
+
+    if (rainProbability >= 30 && precipitation >= 0.1) {
+      let umbrellaLevel = '';
+      let precipitationText = '';
+      let notificationPriority = Notifications.AndroidImportance.DEFAULT;
+
+      if (rainProbability >= 70 && precipitation >= 5) {
+        umbrellaLevel = '🌧️ 꼭 필요';
+        precipitationText = `강한 비 예상 (${precipitation}mm)`;
+        notificationPriority = Notifications.AndroidImportance.HIGH;
+      } else if (rainProbability >= 50 && precipitation >= 1) {
+        umbrellaLevel = '☔ 권장';
+        precipitationText = `비 예상 (${precipitation}mm)`;
+        notificationPriority = Notifications.AndroidImportance.DEFAULT;
+      } else {
+        umbrellaLevel = '🌦️ 고려';
+        precipitationText = `약한 비 가능 (${precipitation}mm)`;
+        notificationPriority = Notifications.AndroidImportance.DEFAULT;
+      }
+
+      const notificationBody = `${umbrellaLevel}\n${precipitationText}\n최고 ${maxTemp}°C / 최저 ${minTemp}°C`;
+
+      // 시간 유효성 검사
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        throw new Error('잘못된 시간 형식입니다');
+      }
+
+      // 권한 재확인
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('알림 권한이 없습니다');
+      }
+
+      const trigger = {
+        hour,
+        minute,
+        repeats: true,
+      };
+
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🌂 우산 챙기세요!',
+          body: notificationBody,
+          sound: true,
+          priority: notificationPriority,
+          data: {
+            rainProbability,
+            precipitation,
+            maxTemp,
+            minTemp,
+            type: 'rain_notification'
+          },
+        },
+        trigger,
+      });
+
+      console.log('알림 스케줄 완료:', notificationId);
+      return {
+        success: true,
+        message: `매일 ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}에 날씨 알림이 설정되었습니다`,
+        notificationId
+      };
+    }
+
+    return {
+      success: false,
+      message: '비 예보가 없어 알림을 설정하지 않았습니다'
+    };
+  } catch (error) {
+    console.error('알림 스케줄 오류:', error);
+    throw new Error(`알림 설정에 실패했습니다: ${error.message}`);
+  }
+};
+
+export const checkDailyWeatherAndNotify = async (weatherData, hour, minute) => {
+  try {
+    const result = await scheduleRainNotification(hour, minute, weatherData);
+    return result;
+  } catch (error) {
+    console.error('일일 날씨 체크 오류:', error);
+    return {
+      success: false,
+      message: `날씨 체크 실패: ${error.message}`
+    };
+  }
+};
+
+export const getUmbrellaRecommendation = (weatherData) => {
+  const rainProbability = weatherData?.daily?.precipitation_probability_max?.[0] || 0;
+  const precipitation = weatherData?.daily?.precipitation_sum?.[0] || 0;
+
+  if (rainProbability >= 70 && precipitation >= 5) {
+    return {
+      level: 'high',
+      message: `🌧️ 우산 꼭 필요! (비 확률 ${rainProbability}%, 강수량 ${precipitation}mm)`
+    };
+  } else if (rainProbability >= 50 && precipitation >= 1) {
+    return {
+      level: 'medium',
+      message: `☔ 우산 권장. (비 확률 ${rainProbability}%, 강수량 ${precipitation}mm)`
+    };
+  } else if (rainProbability >= 30 && precipitation >= 0.1) {
+    return {
+      level: 'low',
+      message: `🌦️ 우산 고려. (비 확률 ${rainProbability}%, 강수량 ${precipitation}mm)`
+    };
+  }
+
+  return {
+    level: 'none',
+    message: '☀️ 우산 불필요.'
+  };
+};
+
+export const sendTestNotification = async () => {
+  try {
+    // 권한 확인
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      throw new Error('알림 권한이 없습니다. 설정에서 권한을 허용해주세요.');
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🌂 테스트 알림',
+        body: '비 확률 80%, 강수량 5.2mm\n최고 23°C, 최저 18°C',
+        sound: true,
+        priority: Notifications.AndroidImportance.HIGH,
+      },
+      trigger: null,
+    });
+
+    console.log('테스트 알림 전송 완료');
+    return { success: true, message: '테스트 알림이 전송되었습니다' };
+  } catch (error) {
+    console.error('테스트 알림 오류:', error);
+    throw new Error(`테스트 알림 전송에 실패했습니다: ${error.message}`);
+  }
+};
+
+// 로컬 알림만 사용하는 대안 함수
+export const setupLocalNotificationsOnly = async () => {
+  try {
+    if (!Device.isDevice) {
+      Alert.alert('알림 설정 실패', '실제 기기에서만 알림을 사용할 수 있습니다.');
+      return false;
+    }
+
+    // Android 알림 채널 설정
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      });
+    }
+
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('권한 필요', '설정에서 알림 권한을 허용해주세요.');
+      return false;
+    }
+
+    Alert.alert(
+      '알림 설정 완료',
+      '로컬 알림이 설정되었습니다.\n\n✅ 예약 알림 작동\n✅ 테스트 알림 작동\n📱 원격 푸시는 Firebase 설정 후 가능'
+    );
+
+    return true;
+  } catch (error) {
+    console.error('로컬 알림 설정 오류:', error);
+    Alert.alert('설정 실패', '알림 설정에 실패했습니다.');
+    return false;
+  }
+};

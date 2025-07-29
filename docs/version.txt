@@ -1,0 +1,57 @@
+v0.0.1(2025.06.02)
+- 프로젝트 생성
+- 깃허브 연결
+
+v0.0.2(2025.06.02)
+- 라이브러리 설치
+- .gitignore 수정
+
+v0.1.0(2025.06.02)
+- 일단 기본적인 구성 완료
+- expo에서 안드로이드 알림 기능이 지원하지 않아서 apk 추출해서 확인해야함
+- 이 버전은 expo 무시하고 안드로이드 알림 기능 넣어둠(apk에서 확인하기 위함)
+
+v0.1.1(2025.06.02)
+- apk 빌드 시도
+- expo 빌드를 통해 모바일에서 앱 실행은 가능
+- 테스트용 알림은 정상 작동함
+- 설정한 시간에 알림이 안 옴
+
+v0.1.2(2025.06.02)
+- README 수정
+
+v1.0.1(2025.07.29)
+- 전체 코드 개선
+- 백그라운드 알림 개선1(expo, firebase 알림 사용)
+
+v1.0.2(2025.07.30)
+- 깃허브 워크플로우 파일 추가
+
+v1.0.3(2025.07.30)
+- 깃허브 워크플로우 설정 추가
+
+v1.0.4(2025.07.30)
+- npm install -g @expo/eas-cli@latest 명령 실행 중에 404 오류 해결 시도1
+
+v1.0.5(2025.07.30)
+- npm install -g @expo/eas-cli@latest 명령 실행 중에 404 오류 해결 시도2
+
+v1.0.6(2025.07.30)
+- npm install -g @expo/eas-cli@latest 명령 실행 중에 404 오류 해결 시도3
+
+v1.0.7(2025.07.30)
+- npm install -g @expo/eas-cli@latest 오류 해결 및 APK 빌드 과정 실패
+- 엑스포 @react-native-community/netinfo 패키지가 설치 오류 해결 시도
+
+v1.0.8(2025.07.30)
+- APK 빌드 과정 문제 해결 시도1(Firebase 환경 변수 설정 및 빌드 훅 추가)
+
+
+개선 사항
+- 앱 아이콘
+
+빌드 명령어
+eas build --platform android --profile preview
+
+캐시 삭제
+eas build --platform android --profile preview --clear-cache

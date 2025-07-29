@@ -1,0 +1,69 @@
+# .github/workflows/build-rainonday-apk.yml
+name: Build RainOnDay APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_profile:
+        description: 'Build Profile'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  build-apk:
+    name: Build RainOnDay APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 🔧 Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 의존성 설치
+        run: npm ci
+
+      - name: 🛠️ EAS CLI 설치
+        run: npm install -g @expo/eas-cli@latest
+
+      - name: 🔐 Expo 인증 확인
+        run: eas whoami
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 🚀 APK 빌드 실행
+        run: |
+          echo "🔨 빌드 프로필: ${{ github.event.inputs.build_profile || 'preview' }}"
+          eas build --platform android --profile ${{ github.event.inputs.build_profile || 'preview' }} --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📱 APK 파일 처리
+        run: |
+          APK_FILE=$(find . -name "*.apk" -type f | head -1)
+          if [ -n "$APK_FILE" ]; then
+            TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+            PROFILE="${{ github.event.inputs.build_profile || 'preview' }}"
+            NEW_NAME="RainOnDay_${PROFILE}_${TIMESTAMP}.apk"
+            mv "$APK_FILE" "$NEW_NAME"
+            echo "APK_NAME=$NEW_NAME" >> $GITHUB_ENV
+            echo "✅ APK 파일명: $NEW_NAME"
+          else
+            echo "❌ APK 파일을 찾을 수 없습니다"
+            exit 1
+          fi
+
+      - name: ⬆️ APK Artifacts 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: rainonday-apk-${{ github.run_number }}
+          path: ${{ env.APK_NAME }}
+          retention-days: 30

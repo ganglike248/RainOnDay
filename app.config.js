@@ -1,0 +1,81 @@
+// app.config.js
+export default {
+    expo: {
+        name: "RainOnDay",
+        slug: "RainOnDay",
+        version: "1.0.1",
+        orientation: "portrait",
+        icon: "./assets/images/icon.png",
+        scheme: "rainonday",
+        userInterfaceStyle: "automatic",
+        newArchEnabled: false,
+        ios: {
+            newArchEnabled: false,
+            infoPlist: {
+                UIBackgroundModes: [
+                    "background-processing",
+                    "background-fetch",
+                    "remote-notification"
+                ]
+            }
+        },
+        android: {
+            newArchEnabled: false,
+            versionCode: 1,
+            adaptiveIcon: {
+                foregroundImage: "./assets/images/adaptive-icon.png",
+                backgroundColor: "#ffffff"
+            },
+            edgeToEdgeEnabled: true,
+            package: "com.sonrak.RainOnDay",
+            permissions: [
+                "WAKE_LOCK",
+                "RECEIVE_BOOT_COMPLETED",
+                "INTERNET",
+                "ACCESS_NETWORK_STATE"
+            ],
+            // 환경 변수에서 Firebase 설정 동적 로드
+            googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?
+                process.env.GOOGLE_SERVICES_JSON :
+                undefined
+        },
+        web: {
+            bundler: "metro",
+            output: "static",
+            favicon: "./assets/images/favicon.png"
+        },
+        plugins: [
+            "expo-router",
+            [
+                "expo-splash-screen",
+                {
+                    image: "./assets/images/splash-icon.png",
+                    imageWidth: 200,
+                    resizeMode: "contain",
+                    backgroundColor: "#ffffff"
+                }
+            ],
+            [
+                "expo-notifications",
+                {
+                    icon: "./assets/images/icon.png",
+                    color: "#6BB6FF",
+                    defaultChannel: "default",
+                    enableBackgroundRemoteNotifications: true,
+                    requestPermissionsImmediately: false
+                }
+            ],
+            "expo-web-browser"
+        ],
+        experiments: {
+            typedRoutes: true
+        },
+        extra: {
+            router: {},
+            eas: {
+                projectId: "ff8a3b71-7f94-41f0-9b5d-34df9484f5fc"
+            }
+        },
+        owner: "sonrak"
+    }
+};
