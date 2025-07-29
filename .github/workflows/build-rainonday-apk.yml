@@ -62,7 +62,22 @@ jobs:
           fi
 
       - name: 🛠️ EAS CLI 설치
-        run: npm install -g @expo/eas-cli@latest
+        run: |
+          echo "🔧 NPM 설정 초기화"
+          npm config set registry https://registry.npmjs.org/
+          npm config delete proxy || true
+          npm config delete https-proxy || true
+          npm cache clean --force
+          
+          echo "📦 EAS CLI 설치 시도"
+          # 여러 방법으로 설치 시도
+          npm install -g @expo/eas-cli@latest || \
+          npm install -g @expo/eas-cli@16.17.3 || \
+          npm install -g eas-cli@latest || \
+          { echo "NPM 설치 실패, Yarn으로 시도"; npm install -g yarn && yarn global add @expo/eas-cli@latest; }
+          
+          echo "✅ EAS CLI 버전 확인"
+          eas --version || npx @expo/eas-cli@latest --version
 
       - name: 🔐 Expo 인증 확인
         run: eas whoami
